@@ -15,8 +15,8 @@ use std::io::{Read, Seek};
 use std::pin::Pin;
 use tokio_stream::Stream;
 
-type BoxedSubtitleStream = Box<dyn PacketStream<Packet = Option<SubtitlePacket>> + Send>;
-type BoxedDataStream = Box<dyn PacketStream<Packet = Option<DataPacket>> + Send>;
+type BoxedSubtitleStream = Box<dyn PacketStream<Packet = SubtitlePacket> + Send>;
+type BoxedDataStream = Box<dyn PacketStream<Packet = DataPacket> + Send>;
 
 /// An interface over an ffmpeg demuxer.
 pub struct Demuxer<T: Read + Send> {
@@ -103,7 +103,7 @@ impl<T: Read + Send> Demuxer<T> {
     pub fn subscribe_to_video(
         &self,
         idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = Option<VideoPacket>>>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = RecvResult<VideoPacket>>>>> {
         self.video_streams.get(&idx).map(|v| v.stream())
     }
 
@@ -111,7 +111,7 @@ impl<T: Read + Send> Demuxer<T> {
     pub fn subscribe_to_subtitles(
         &self,
         idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = Option<SubtitlePacket>>>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = RecvResult<SubtitlePacket>>>>> {
         self.subtitle_streams.get(&idx).map(|v| v.stream())
     }
 
@@ -119,7 +119,7 @@ impl<T: Read + Send> Demuxer<T> {
     pub fn subscribe_to_data(
         &self,
         idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = Option<DataPacket>>>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = RecvResult<DataPacket>>>>> {
         self.data_streams.get(&idx).map(|v| v.stream())
     }
 

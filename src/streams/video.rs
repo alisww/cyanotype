@@ -13,9 +13,8 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::time::Duration;
-use tokio::sync::watch::{self, Receiver as WatchReceiver, Sender as WatchSender};
-use tokio_stream::{wrappers::WatchStream, Stream};
-
+use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use tokio_stream::{wrappers::BroadcastStream, Stream};
 /// A simple video packet, containing the image data of the frame and the time where it should be presented.
 #[derive(Clone)]
 pub struct VideoPacket {
@@ -36,17 +35,17 @@ pub struct VideoStream {
     video_transformer: VideoFrameScaler,
     height: u32,
     width: u32,
-    tx: WatchSender<Option<VideoPacket>>,
+    tx: BroadcastSender<VideoPacket>,
 }
 
 impl PacketStream for VideoStream {
-    type Packet = Option<VideoPacket>;
+    type Packet = VideoPacket;
 
     fn from_ffmpeg(stream: &FFmpegStream) -> Result<Self> {
         let parameters = stream.codec_parameters();
         let extra_data = parameters.extradata().map(|v| v.to_vec());
 
-        let (tx, _) = watch::channel(None);
+        let (tx, _) = broadcast::channel(64);
         let video_decoder = VideoDecoder::from_stream(stream)?.build()?;
         let video_params = parameters.as_video_codec_parameters().unwrap();
         let (width, height) = (video_params.width(), video_params.height());
@@ -105,12 +104,12 @@ impl PacketStream for VideoStream {
         self.parameters.clone()
     }
 
-    fn subscribe(&self) -> WatchReceiver<Self::Packet> {
+    fn subscribe(&self) -> BroadcastReceiver<Self::Packet> {
         self.tx.subscribe()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
-        Box::pin(WatchStream::new(self.tx.subscribe()))
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = RecvResult<Self::Packet>>>> {
+        Box::pin(BroadcastStream::new(self.tx.subscribe()))
     }
 
     fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
@@ -124,7 +123,7 @@ impl DecoderStream for VideoStream {
     fn run(&mut self) -> Result<()> {
         while let Some(frame) = self.video_decoder.take()? {
             let frame = self.video_transformer.scale(&frame)?;
-            self.tx.send(Some(VideoPacket {
+            self.tx.send(VideoPacket {
                 time: Duration::from_nanos(
                     frame.pts().as_nanos().ok_or(CyanotypeError::TimeMissing)? as u64,
                 ),
@@ -134,7 +133,7 @@ impl DecoderStream for VideoStream {
                     frame.planes()[0].data().to_vec(),
                 )
                 .ok_or(CyanotypeError::ImageDecodeError)?,
-            }));
+            });
         }
 
         Ok(())

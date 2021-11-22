@@ -17,3 +17,5 @@ pub enum CyanotypeError {
 }
 
 pub type Result<T> = std::result::Result<T, CyanotypeError>;
+pub type RecvResult<T> =
+    std::result::Result<T, tokio_stream::wrappers::errors::BroadcastStreamRecvError>;

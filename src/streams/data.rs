@@ -9,8 +9,8 @@ use ac_ffmpeg::time::{TimeBase as FFmpegTimeBase, Timestamp as FFmpegTimestamp};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Duration;
-use tokio::sync::watch::{self, Receiver as WatchReceiver, Sender as WatchSender};
-use tokio_stream::{wrappers::WatchStream, Stream};
+use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use tokio_stream::{wrappers::BroadcastStream, Stream};
 
 /// A packet of undecoded raw data.
 #[derive(Clone)]
@@ -28,17 +28,17 @@ pub struct DataStream {
     frames: Option<u64>,
     extra_data: Option<Vec<u8>>,
     parameters: CodecParameters,
-    tx: WatchSender<Option<DataPacket>>,
+    tx: BroadcastSender<DataPacket>,
 }
 
 impl PacketStream for DataStream {
-    type Packet = Option<DataPacket>;
+    type Packet = DataPacket;
 
     fn from_ffmpeg(stream: &FFmpegStream) -> Result<Self> {
         let parameters = stream.codec_parameters();
         let extra_data = parameters.extradata().map(|v| v.to_vec());
 
-        let (tx, _) = watch::channel(None);
+        let (tx, _) = broadcast::channel(64);
 
         Ok(DataStream {
             metadata: stream.metadata_dict(),
@@ -81,22 +81,22 @@ impl PacketStream for DataStream {
         self.parameters.clone()
     }
 
-    fn subscribe(&self) -> WatchReceiver<Self::Packet> {
+    fn subscribe(&self) -> BroadcastReceiver<Self::Packet> {
         self.tx.subscribe()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
-        Box::pin(WatchStream::new(self.tx.subscribe()))
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = RecvResult<Self::Packet>>>> {
+        Box::pin(BroadcastStream::new(self.tx.subscribe()))
     }
 
     fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
         let time = Duration::from_nanos(
             packet.pts().as_nanos().ok_or(CyanotypeError::TimeMissing)? as u64,
         );
-        self.tx.send(Some(DataPacket {
+        self.tx.send(DataPacket {
             data: packet.data().to_vec(),
             time,
-        }));
+        });
         Ok(())
     }
 }

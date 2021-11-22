@@ -15,7 +15,7 @@ async fn main() {
     loop {
         tokio::select! {
             Some(packet) = subtitle_stream.next() => {
-                if let Some(entry) = packet {
+                if let Ok(entry) = packet {
                     if let SubtitlePacket::SRTEntry { index, start, end, line } = entry {
                         println!("{}",line);
                     }
@@ -25,7 +25,7 @@ async fn main() {
                 }
             },
             Some(packet) = video_stream.next() => {
-                if let Some(_p) = packet {
+                if let Ok(_p) = packet {
                     // println!("{:?}",p.time);
                 }
 

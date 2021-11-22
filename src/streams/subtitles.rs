@@ -10,8 +10,8 @@ use ac_ffmpeg::time::{TimeBase as FFmpegTimeBase, Timestamp as FFmpegTimestamp};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Duration;
-use tokio::sync::watch::{self, Receiver as WatchReceiver, Sender as WatchSender};
-use tokio_stream::{wrappers::WatchStream, Stream, StreamExt};
+use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt};
 
 /// A subtitle packet.
 #[derive(Debug, Clone)]
@@ -46,11 +46,11 @@ pub struct SSAStream {
     header: Vec<substation::Section>,
     parameters: CodecParameters,
     definition_header: Vec<String>,
-    tx: WatchSender<Option<SubtitlePacket>>,
+    tx: BroadcastSender<SubtitlePacket>,
 }
 
 impl PacketStream for SSAStream {
-    type Packet = Option<SubtitlePacket>;
+    type Packet = SubtitlePacket;
 
     fn from_ffmpeg(stream: &FFmpegStream) -> Result<Self> {
         let parameters = stream.codec_parameters();
@@ -68,7 +68,7 @@ impl PacketStream for SSAStream {
             Vec::new()
         };
 
-        let (tx, _) = watch::channel(None);
+        let (tx, _) = broadcast::channel(64);
 
         Ok(SSAStream {
             metadata: stream.metadata_dict(),
@@ -126,19 +126,19 @@ impl PacketStream for SSAStream {
         self.parameters.clone()
     }
 
-    fn subscribe(&self) -> WatchReceiver<Self::Packet> {
+    fn subscribe(&self) -> BroadcastReceiver<Self::Packet> {
         self.tx.subscribe()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = RecvResult<Self::Packet>>>> {
         Box::pin(
             tokio_stream::iter(
                 self.header
                     .clone()
                     .into_iter()
-                    .map(|v| Some(SubtitlePacket::SSASection(v))),
+                    .map(|v| Ok(SubtitlePacket::SSASection(v))),
             )
-            .chain(WatchStream::new(self.tx.subscribe())),
+            .chain(BroadcastStream::new(self.tx.subscribe())),
         )
     }
 
@@ -159,7 +159,7 @@ impl PacketStream for SSAStream {
         .map_err(|_| CyanotypeError::SubtitleError)?;
         entry.start = Some(time);
         entry.end = Some(time + duration);
-        self.tx.send(Some(SubtitlePacket::SSAEntry(entry)));
+        self.tx.send(SubtitlePacket::SSAEntry(entry));
         Ok(())
     }
 }
@@ -174,17 +174,17 @@ pub struct SRTStream {
     extra_data: Option<Vec<u8>>,
     parameters: CodecParameters,
     index: usize,
-    tx: WatchSender<Option<SubtitlePacket>>,
+    tx: BroadcastSender<SubtitlePacket>,
 }
 
 impl PacketStream for SRTStream {
-    type Packet = Option<SubtitlePacket>;
+    type Packet = SubtitlePacket;
 
     fn from_ffmpeg(stream: &FFmpegStream) -> Result<Self> {
         let parameters = stream.codec_parameters();
         let extra_data = parameters.extradata().map(|v| v.to_vec());
 
-        let (tx, _) = watch::channel(None);
+        let (tx, _) = broadcast::channel(64);
 
         Ok(SRTStream {
             metadata: stream.metadata_dict(),
@@ -228,12 +228,12 @@ impl PacketStream for SRTStream {
         self.parameters.clone()
     }
 
-    fn subscribe(&self) -> WatchReceiver<Self::Packet> {
+    fn subscribe(&self) -> BroadcastReceiver<Self::Packet> {
         self.tx.subscribe()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
-        Box::pin(WatchStream::new(self.tx.subscribe()))
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = RecvResult<Self::Packet>>>> {
+        Box::pin(BroadcastStream::new(self.tx.subscribe()))
     }
 
     fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
@@ -249,12 +249,12 @@ impl PacketStream for SRTStream {
 
         self.index += 1;
 
-        self.tx.send(Some(SubtitlePacket::SRTEntry {
+        self.tx.send(SubtitlePacket::SRTEntry {
             index: self.index,
             start: time,
             end: time + duration,
             line: String::from_utf8(packet.data().to_vec())?,
-        }));
+        });
         Ok(())
     }
 }
@@ -268,17 +268,17 @@ pub struct UnknownSubtitleStream {
     frames: Option<u64>,
     extra_data: Option<Vec<u8>>,
     parameters: CodecParameters,
-    tx: WatchSender<Option<SubtitlePacket>>,
+    tx: BroadcastSender<SubtitlePacket>,
 }
 
 impl PacketStream for UnknownSubtitleStream {
-    type Packet = Option<SubtitlePacket>;
+    type Packet = SubtitlePacket;
 
     fn from_ffmpeg(stream: &FFmpegStream) -> Result<Self> {
         let parameters = stream.codec_parameters();
         let extra_data = parameters.extradata().map(|v| v.to_vec());
 
-        let (tx, _) = watch::channel(None);
+        let (tx, _) = broadcast::channel(64);
 
         Ok(UnknownSubtitleStream {
             metadata: stream.metadata_dict(),
@@ -321,12 +321,12 @@ impl PacketStream for UnknownSubtitleStream {
         self.parameters.clone()
     }
 
-    fn subscribe(&self) -> WatchReceiver<Self::Packet> {
+    fn subscribe(&self) -> BroadcastReceiver<Self::Packet> {
         self.tx.subscribe()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
-        Box::pin(WatchStream::new(self.tx.subscribe()))
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = RecvResult<Self::Packet>>>> {
+        Box::pin(BroadcastStream::new(self.tx.subscribe()))
     }
 
     fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
@@ -340,11 +340,11 @@ impl PacketStream for UnknownSubtitleStream {
                 .ok_or(CyanotypeError::TimeMissing)? as u64,
         );
 
-        self.tx.send(Some(SubtitlePacket::Raw {
+        self.tx.send(SubtitlePacket::Raw {
             start: time,
             end: time + duration,
             data: packet.data().to_vec(),
-        }));
+        });
         Ok(())
     }
 }
