@@ -1,0 +1,25 @@
+[package]
+name = "cyanotype"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thiserror = "1"
+
+[dependencies.tokio]
+version = "1"
+features = ["full"]
+
+[dependencies.tokio-stream]
+version = "0.1.8"
+features = ["sync"]
+
+[dependencies.ac-ffmpeg]
+git = "https://github.com/alisww/rust-ac-ffmpeg.git"
+
+[dependencies.substation]
+git = "https://github.com/alisww/substation.git"
+
+[dependencies.image]
+version = "0.23"
+default-features = false
