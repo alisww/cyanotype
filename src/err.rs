@@ -10,6 +10,8 @@ pub enum CyanotypeError {
     ImageDecodeError,
     #[error("couldn't get packet time from ffmpeg")]
     TimeMissing,
+    #[error("couldn't send packet")]
+    ChannelSendError,
     #[error(transparent)]
     UTF8Error(#[from] std::string::FromUtf8Error),
     #[error(transparent)]
@@ -17,5 +19,3 @@ pub enum CyanotypeError {
 }
 
 pub type Result<T> = std::result::Result<T, CyanotypeError>;
-pub type RecvResult<T> =
-    std::result::Result<T, tokio_stream::wrappers::errors::BroadcastStreamRecvError>;

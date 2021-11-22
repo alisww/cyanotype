@@ -5,14 +5,13 @@ edition = "2021"
 
 [dependencies]
 thiserror = "1"
+futures = "0.3.17"
+async-trait = "0.1.51"
+async-broadcast = "0.3.4"
 
-[dependencies.tokio]
+[dev-dependencies.tokio]
 version = "1"
 features = ["full"]
-
-[dependencies.tokio-stream]
-version = "0.1.8"
-features = ["sync"]
 
 [dependencies.ac-ffmpeg]
 git = "https://github.com/alisww/rust-ac-ffmpeg.git"

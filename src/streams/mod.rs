@@ -1,14 +1,16 @@
-use crate::{RecvResult, Result};
+use crate::Result;
 use ac_ffmpeg::codec::CodecParameters;
 use ac_ffmpeg::format::stream::Stream as FFmpegStream;
 use ac_ffmpeg::packet::Packet as FFmpegPacket;
 use ac_ffmpeg::time::{TimeBase as FFmpegTimeBase, Timestamp as FFmpegTimestamp};
+use async_broadcast::Receiver as BroadcastReceiver;
+use async_trait::async_trait;
+use futures::stream::Stream;
 use std::collections::HashMap;
 use std::pin::Pin;
-use tokio::sync::broadcast::Receiver as BroadcastReceiver;
-use tokio_stream::Stream;
 
 /// An adapter that converts raw ffmpeg packets and outputs them to a tokio channel or async stream.
+#[async_trait]
 pub trait PacketStream {
     type Packet;
 
@@ -35,19 +37,22 @@ pub trait PacketStream {
 
     // processing
     /// Push an FFmpeg packet into this stream for decoding.
-    fn push(&mut self, packet: FFmpegPacket) -> Result<()>;
+    async fn push(&mut self, packet: FFmpegPacket) -> Result<()>;
     /// Get a new receiver, which receives a message every time a new packet is decoded.
     fn subscribe(&self) -> BroadcastReceiver<Self::Packet>;
     /// Get a stream of decoded packets from this stream.
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = RecvResult<Self::Packet>>>>;
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>>;
+
+    fn close(&self);
 }
 
 /// A stream that needs additional underlying encoding.
+#[async_trait]
 pub trait DecoderStream: PacketStream {
     /// Flushes the underlying ffmpeg decoder.
     fn flush(&mut self) -> Result<()>;
     /// Runs underlying decoder while it has packets queued.
-    fn run(&mut self) -> Result<()>;
+    async fn run(&mut self) -> Result<()>;
 }
 
 mod data;

@@ -10,10 +10,10 @@ use ac_ffmpeg::format::demuxer::{
     Demuxer as FFmpegDemuxer, DemuxerWithStreamInfo as FFmpegDemuxerWithStreamInfo,
 };
 use ac_ffmpeg::format::io::IO as FFmpegIO;
+use futures::stream::Stream;
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::pin::Pin;
-use tokio_stream::Stream;
 
 type BoxedSubtitleStream = Box<dyn PacketStream<Packet = SubtitlePacket> + Send>;
 type BoxedDataStream = Box<dyn PacketStream<Packet = DataPacket> + Send>;
@@ -103,7 +103,7 @@ impl<T: Read + Send> Demuxer<T> {
     pub fn subscribe_to_video(
         &self,
         idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = RecvResult<VideoPacket>>>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = VideoPacket>>>> {
         self.video_streams.get(&idx).map(|v| v.stream())
     }
 
@@ -111,35 +111,41 @@ impl<T: Read + Send> Demuxer<T> {
     pub fn subscribe_to_subtitles(
         &self,
         idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = RecvResult<SubtitlePacket>>>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = SubtitlePacket>>>> {
         self.subtitle_streams.get(&idx).map(|v| v.stream())
     }
 
     /// Returns an async stream of [streams::DataPacket]s from a specific stream. If the data stream specified by the index is not found, returns none.
-    pub fn subscribe_to_data(
-        &self,
-        idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = RecvResult<DataPacket>>>>> {
+    pub fn subscribe_to_data(&self, idx: usize) -> Option<Pin<Box<dyn Stream<Item = DataPacket>>>> {
         self.data_streams.get(&idx).map(|v| v.stream())
     }
 
     /// Run the decoder until it reaches an EOF.
-    pub fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()> {
         while let Some(packet) = self.inner.take()? {
             let idx = packet.stream_index();
             if let Some(stream) = self.video_streams.get_mut(&idx) {
-                stream.push(packet)?;
-                stream.run()?; // run decoder until no frames are left
+                stream.push(packet).await?;
+                stream.run().await?; // run decoder until no frames are left
             } else if let Some(stream) = self.subtitle_streams.get_mut(&idx) {
-                stream.push(packet)?;
+                stream.push(packet).await?;
             } else if let Some(stream) = self.data_streams.get_mut(&idx) {
-                stream.push(packet)?;
+                stream.push(packet).await?;
             }
         }
         // if no packets are left, run video decoders until they're done.
         for stream in self.video_streams.values_mut() {
             stream.flush()?;
-            stream.run()?;
+            stream.run().await?;
+            stream.close();
+        }
+
+        for stream in self.subtitle_streams.values() {
+            stream.close();
+        }
+
+        for stream in self.data_streams.values() {
+            stream.close();
         }
 
         Ok(())

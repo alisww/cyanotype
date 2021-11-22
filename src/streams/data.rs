@@ -6,11 +6,14 @@ use ac_ffmpeg::codec::CodecParameters;
 use ac_ffmpeg::format::stream::Stream as FFmpegStream;
 use ac_ffmpeg::packet::Packet as FFmpegPacket;
 use ac_ffmpeg::time::{TimeBase as FFmpegTimeBase, Timestamp as FFmpegTimestamp};
+use async_broadcast::{
+    broadcast as broadcast_channel, InactiveReceiver as InactiveBroadcastReceiver,
+    Receiver as BroadcastReceiver, Sender as BroadcastSender,
+};
+use futures::stream::Stream;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Duration;
-use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
-use tokio_stream::{wrappers::BroadcastStream, Stream};
 
 /// A packet of undecoded raw data.
 #[derive(Clone)]
@@ -29,8 +32,10 @@ pub struct DataStream {
     extra_data: Option<Vec<u8>>,
     parameters: CodecParameters,
     tx: BroadcastSender<DataPacket>,
+    rx: InactiveBroadcastReceiver<DataPacket>,
 }
 
+#[async_trait]
 impl PacketStream for DataStream {
     type Packet = DataPacket;
 
@@ -38,7 +43,7 @@ impl PacketStream for DataStream {
         let parameters = stream.codec_parameters();
         let extra_data = parameters.extradata().map(|v| v.to_vec());
 
-        let (tx, _) = broadcast::channel(64);
+        let (tx, rx) = broadcast_channel(64);
 
         Ok(DataStream {
             metadata: stream.metadata_dict(),
@@ -49,6 +54,7 @@ impl PacketStream for DataStream {
             extra_data,
             parameters,
             tx,
+            rx: rx.deactivate(),
         })
     }
 
@@ -82,21 +88,31 @@ impl PacketStream for DataStream {
     }
 
     fn subscribe(&self) -> BroadcastReceiver<Self::Packet> {
-        self.tx.subscribe()
+        self.rx.activate_cloned()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = RecvResult<Self::Packet>>>> {
-        Box::pin(BroadcastStream::new(self.tx.subscribe()))
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
+        Box::pin(self.rx.activate_cloned())
     }
 
-    fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
-        let time = Duration::from_nanos(
-            packet.pts().as_nanos().ok_or(CyanotypeError::TimeMissing)? as u64,
-        );
-        self.tx.send(DataPacket {
-            data: packet.data().to_vec(),
-            time,
-        });
+    async fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
+        if self.tx.receiver_count() > 0 {
+            let time = Duration::from_nanos(
+                packet.pts().as_nanos().ok_or(CyanotypeError::TimeMissing)? as u64,
+            );
+            self.tx
+                .broadcast(DataPacket {
+                    data: packet.data().to_vec(),
+                    time,
+                })
+                .await
+                .map_err(|_| CyanotypeError::ChannelSendError)?;
+        }
+
         Ok(())
+    }
+
+    fn close(&self) {
+        self.tx.close();
     }
 }

@@ -2,19 +2,24 @@
 
 use super::*;
 use crate::*;
+use async_trait::async_trait;
 
 use ac_ffmpeg::codec::video::{PixelFormat, VideoDecoder, VideoFrameScaler};
 use ac_ffmpeg::codec::{CodecParameters, Decoder};
 use ac_ffmpeg::format::stream::Stream as FFmpegStream;
 use ac_ffmpeg::packet::Packet as FFmpegPacket;
 use ac_ffmpeg::time::{TimeBase as FFmpegTimeBase, Timestamp as FFmpegTimestamp};
+use async_broadcast::{
+    broadcast as broadcast_channel, InactiveReceiver as InactiveBroadcastReceiver,
+    Receiver as BroadcastReceiver, Sender as BroadcastSender,
+};
+use futures::stream::Stream;
 use image::RgbaImage;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::time::Duration;
-use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
-use tokio_stream::{wrappers::BroadcastStream, Stream};
+
 /// A simple video packet, containing the image data of the frame and the time where it should be presented.
 #[derive(Clone)]
 pub struct VideoPacket {
@@ -36,8 +41,10 @@ pub struct VideoStream {
     height: u32,
     width: u32,
     tx: BroadcastSender<VideoPacket>,
+    rx: InactiveBroadcastReceiver<VideoPacket>,
 }
 
+#[async_trait]
 impl PacketStream for VideoStream {
     type Packet = VideoPacket;
 
@@ -45,7 +52,7 @@ impl PacketStream for VideoStream {
         let parameters = stream.codec_parameters();
         let extra_data = parameters.extradata().map(|v| v.to_vec());
 
-        let (tx, _) = broadcast::channel(64);
+        let (tx, rx) = broadcast_channel(64);
         let video_decoder = VideoDecoder::from_stream(stream)?.build()?;
         let video_params = parameters.as_video_codec_parameters().unwrap();
         let (width, height) = (video_params.width(), video_params.height());
@@ -72,6 +79,7 @@ impl PacketStream for VideoStream {
             extra_data,
             parameters,
             tx,
+            rx: rx.deactivate(),
         })
     }
 
@@ -105,35 +113,52 @@ impl PacketStream for VideoStream {
     }
 
     fn subscribe(&self) -> BroadcastReceiver<Self::Packet> {
-        self.tx.subscribe()
+        self.rx.activate_cloned()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = RecvResult<Self::Packet>>>> {
-        Box::pin(BroadcastStream::new(self.tx.subscribe()))
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
+        Box::pin(self.rx.activate_cloned())
     }
 
-    fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
-        self.video_decoder
-            .push(packet)
-            .map_err(CyanotypeError::FFmpegError)
+    async fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
+        if self.tx.receiver_count() > 0 {
+            self.video_decoder
+                .push(packet)
+                .map_err(CyanotypeError::FFmpegError);
+        }
+        Ok(())
+    }
+
+    fn close(&self) {
+        self.tx.close();
     }
 }
 
-impl DecoderStream for VideoStream {
-    fn run(&mut self) -> Result<()> {
-        while let Some(frame) = self.video_decoder.take()? {
-            let frame = self.video_transformer.scale(&frame)?;
-            self.tx.send(VideoPacket {
-                time: Duration::from_nanos(
-                    frame.pts().as_nanos().ok_or(CyanotypeError::TimeMissing)? as u64,
-                ),
-                frame: RgbaImage::from_raw(
-                    self.width,
-                    self.height,
-                    frame.planes()[0].data().to_vec(),
-                )
+impl VideoStream {
+    fn decode_frame(
+        &mut self,
+        frame: ac_ffmpeg::codec::video::frame::VideoFrame,
+    ) -> Result<VideoPacket> {
+        let frame = self.video_transformer.scale(&frame)?;
+        Ok(VideoPacket {
+            time: Duration::from_nanos(
+                frame.pts().as_nanos().ok_or(CyanotypeError::TimeMissing)? as u64
+            ),
+            frame: RgbaImage::from_raw(self.width, self.height, frame.planes()[0].data().to_vec())
                 .ok_or(CyanotypeError::ImageDecodeError)?,
-            });
+        })
+    }
+}
+
+#[async_trait]
+impl DecoderStream for VideoStream {
+    async fn run(&mut self) -> Result<()> {
+        while let Some(frame) = self.video_decoder.take()? {
+            let frame = self.decode_frame(frame)?;
+            self.tx
+                .broadcast(frame)
+                .await
+                .map_err(|_| CyanotypeError::ChannelSendError)?;
         }
 
         Ok(())
