@@ -121,11 +121,11 @@ impl PacketStream for VideoStream {
     }
 
     async fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
-        if self.tx.receiver_count() > 0 {
+        // if self.tx.receiver_count() > 0 {
             self.video_decoder
                 .push(packet)
                 .map_err(CyanotypeError::FFmpegError);
-        }
+        // }
         Ok(())
     }
 
