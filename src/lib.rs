@@ -11,6 +11,7 @@ use ac_ffmpeg::format::demuxer::{
 };
 use ac_ffmpeg::format::io::IO as FFmpegIO;
 use futures::stream::Stream;
+use image::RgbaImage;
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::pin::Pin;
@@ -103,7 +104,7 @@ impl<T: Read + Send> Demuxer<T> {
     pub fn subscribe_to_video(
         &self,
         idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = VideoPacket>>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = VideoPacket<RgbaImage>>>>> {
         self.video_streams.get(&idx).map(|v| v.stream())
     }
 

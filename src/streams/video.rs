@@ -22,8 +22,8 @@ use std::time::Duration;
 
 /// A simple video packet, containing the image data of the frame and the time where it should be presented.
 #[derive(Clone)]
-pub struct VideoPacket {
-    pub frame: RgbaImage,
+pub struct VideoPacket<T> {
+    pub frame: T,
     pub time: Duration,
 }
 
@@ -40,13 +40,13 @@ pub struct VideoStream {
     video_transformer: VideoFrameScaler,
     height: u32,
     width: u32,
-    tx: BroadcastSender<VideoPacket>,
-    rx: InactiveBroadcastReceiver<VideoPacket>,
+    tx: BroadcastSender<VideoPacket<RgbaImage>>,
+    rx: InactiveBroadcastReceiver<VideoPacket<RgbaImage>>,
 }
 
 #[async_trait]
 impl PacketStream for VideoStream {
-    type Packet = VideoPacket;
+    type Packet = VideoPacket<RgbaImage>;
 
     fn from_ffmpeg(stream: &FFmpegStream) -> Result<Self> {
         let parameters = stream.codec_parameters();
@@ -138,7 +138,7 @@ impl VideoStream {
     fn decode_frame(
         &mut self,
         frame: ac_ffmpeg::codec::video::frame::VideoFrame,
-    ) -> Result<VideoPacket> {
+    ) -> Result<VideoPacket<RgbaImage>> {
         let frame = self.video_transformer.scale(&frame)?;
         Ok(VideoPacket {
             time: Duration::from_nanos(
