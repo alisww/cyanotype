@@ -91,6 +91,7 @@ dependencies = [
  "async-trait",
  "futures",
  "image",
+ "subrip",
  "substation",
  "thiserror",
  "tokio",
@@ -396,6 +397,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "parsing-utils"
+version = "0.1.0"
+source = "git+https://github.com/alisww/substation.git#3d6e8f0f46c0b500adcbd59a5595415ecb528775"
+dependencies = [
+ "nom",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -468,11 +477,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ecab6c735a6bb4139c0caafd0cc3635748bbb3acf4550e8138122099251f309"
 
 [[package]]
-name = "substation"
+name = "subrip"
 version = "0.1.0"
-source = "git+https://github.com/alisww/substation.git#b32c6259524e0a8f9125dadc59fd1d57c6f1c412"
+source = "git+https://github.com/alisww/substation.git#3d6e8f0f46c0b500adcbd59a5595415ecb528775"
 dependencies = [
  "nom",
+ "parsing-utils",
+]
+
+[[package]]
+name = "substation"
+version = "0.1.0"
+source = "git+https://github.com/alisww/substation.git#3d6e8f0f46c0b500adcbd59a5595415ecb528775"
+dependencies = [
+ "nom",
+ "parsing-utils",
 ]
 
 [[package]]

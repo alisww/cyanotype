@@ -24,12 +24,7 @@ pub enum SubtitlePacket {
     /// A Substation Alpha subtitle entry.
     SSAEntry(substation::Entry),
     /// A SubRip subtitle entry.
-    SRTEntry {
-        index: usize,
-        start: Duration,
-        end: Duration,
-        line: String,
-    },
+    SRTEntry(subrip::Entry),
     /// A raw subtitle packet, left undecoded.
     Raw {
         start: Duration,
@@ -190,7 +185,7 @@ pub struct SRTStream {
     frames: Option<u64>,
     extra_data: Option<Vec<u8>>,
     parameters: CodecParameters,
-    index: usize,
+    index: u32,
     tx: BroadcastSender<SubtitlePacket>,
     rx: InactiveBroadcastReceiver<SubtitlePacket>,
 }
@@ -271,12 +266,12 @@ impl PacketStream for SRTStream {
             self.index += 1;
 
             self.tx
-                .broadcast(SubtitlePacket::SRTEntry {
+                .broadcast(SubtitlePacket::SRTEntry(subrip::Entry {
                     index: self.index,
                     start: time,
                     end: time + duration,
-                    line: String::from_utf8(packet.data().to_vec())?,
-                })
+                    text: String::from_utf8(packet.data().to_vec())?,
+                }))
                 .await
                 .map_err(|_| CyanotypeError::ChannelSendError)?;
         }
