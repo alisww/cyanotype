@@ -18,7 +18,8 @@ use std::time::Duration;
 /// A packet of undecoded raw data.
 #[derive(Clone)]
 pub struct DataPacket {
-    pub time: Duration,
+    pub time: Option<Duration>,
+    pub duration: Option<Duration>,
     pub data: Vec<u8>,
 }
 
@@ -97,13 +98,19 @@ impl PacketStream for DataStream {
 
     async fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
         if self.tx.receiver_count() > 0 {
-            let time = Duration::from_nanos(
-                packet.pts().as_nanos().ok_or(CyanotypeError::TimeMissing)? as u64,
-            );
+            let time = packet
+                .pts()
+                .as_nanos()
+                .map(|v| Duration::from_nanos(v as u64));
+            let duration = packet
+                .duration()
+                .as_nanos()
+                .map(|v| Duration::from_nanos(v as u64));
             self.tx
                 .broadcast(DataPacket {
                     data: packet.data().to_vec(),
                     time,
+                    duration,
                 })
                 .await
                 .map_err(|_| CyanotypeError::ChannelSendError)?;

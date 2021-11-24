@@ -40,6 +40,7 @@ pub struct VideoStream {
     video_transformer: VideoFrameScaler,
     height: u32,
     width: u32,
+    block: bool,
     tx: BroadcastSender<VideoPacket<RgbaImage>>,
     rx: InactiveBroadcastReceiver<VideoPacket<RgbaImage>>,
 }
@@ -74,6 +75,7 @@ impl PacketStream for VideoStream {
             start_time: stream.start_time(),
             duration: stream.duration(),
             frames: stream.frames(),
+            block: false,
             video_transformer,
             video_decoder,
             extra_data,
@@ -122,9 +124,9 @@ impl PacketStream for VideoStream {
 
     async fn push(&mut self, packet: FFmpegPacket) -> Result<()> {
         // if self.tx.receiver_count() > 0 {
-            self.video_decoder
-                .push(packet)
-                .map_err(CyanotypeError::FFmpegError);
+        self.video_decoder
+            .push(packet)
+            .map_err(CyanotypeError::FFmpegError);
         // }
         Ok(())
     }
@@ -135,6 +137,10 @@ impl PacketStream for VideoStream {
 }
 
 impl VideoStream {
+    pub fn blocking(&mut self, block: bool) {
+        self.block = block;
+    }
+
     fn decode_frame(
         &mut self,
         frame: ac_ffmpeg::codec::video::frame::VideoFrame,
@@ -154,11 +160,13 @@ impl VideoStream {
 impl DecoderStream for VideoStream {
     async fn run(&mut self) -> Result<()> {
         while let Some(frame) = self.video_decoder.take()? {
-            let frame = self.decode_frame(frame)?;
-            self.tx
-                .broadcast(frame)
-                .await
-                .map_err(|_| CyanotypeError::ChannelSendError)?;
+            if self.block || self.tx.receiver_count() > 0 {
+                let frame = self.decode_frame(frame)?;
+                self.tx
+                    .broadcast(frame)
+                    .await
+                    .map_err(|_| CyanotypeError::ChannelSendError)?;
+            }
         }
 
         Ok(())

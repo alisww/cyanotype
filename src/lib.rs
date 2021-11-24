@@ -100,6 +100,11 @@ impl<T: Read + Send> Demuxer<T> {
         })
     }
 
+    /// make video streams blocking - so the demuxer will only run when there is someone listening to the video streams.
+    pub fn block_video_streams(&mut self, block: bool) {
+        self.video_streams.values_mut().for_each(|v| v.blocking(block));
+    }
+
     /// Returns an async stream of [streams::VideoPacket]s from a specific stream. If the video stream specified by the index is not found, returns none.
     pub fn subscribe_to_video(
         &self,
