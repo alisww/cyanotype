@@ -131,7 +131,7 @@ impl PacketStream for SSAStream {
         self.rx.activate_cloned()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet> + Send>> {
         Box::pin(
             stream::iter(
                 self.header
@@ -247,7 +247,7 @@ impl PacketStream for SRTStream {
         self.rx.activate_cloned()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet> + Send>> {
         Box::pin(self.rx.activate_cloned())
     }
 
@@ -352,7 +352,7 @@ impl PacketStream for UnknownSubtitleStream {
         self.rx.activate_cloned()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet> + Send>> {
         Box::pin(self.rx.activate_cloned())
     }
 

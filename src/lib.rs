@@ -102,14 +102,16 @@ impl<T: Read + Send> Demuxer<T> {
 
     /// make video streams blocking - so the demuxer will only run when there is someone listening to the video streams.
     pub fn block_video_streams(&mut self, block: bool) {
-        self.video_streams.values_mut().for_each(|v| v.blocking(block));
+        self.video_streams
+            .values_mut()
+            .for_each(|v| v.blocking(block));
     }
 
     /// Returns an async stream of [streams::VideoPacket]s from a specific stream. If the video stream specified by the index is not found, returns none.
     pub fn subscribe_to_video(
         &self,
         idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = VideoPacket<RgbaImage>>>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = VideoPacket<RgbaImage>> + Send>>> {
         self.video_streams.get(&idx).map(|v| v.stream())
     }
 
@@ -117,12 +119,15 @@ impl<T: Read + Send> Demuxer<T> {
     pub fn subscribe_to_subtitles(
         &self,
         idx: usize,
-    ) -> Option<Pin<Box<dyn Stream<Item = SubtitlePacket>>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = SubtitlePacket> + Send>>> {
         self.subtitle_streams.get(&idx).map(|v| v.stream())
     }
 
     /// Returns an async stream of [streams::DataPacket]s from a specific stream. If the data stream specified by the index is not found, returns none.
-    pub fn subscribe_to_data(&self, idx: usize) -> Option<Pin<Box<dyn Stream<Item = DataPacket>>>> {
+    pub fn subscribe_to_data(
+        &self,
+        idx: usize,
+    ) -> Option<Pin<Box<dyn Stream<Item = DataPacket> + Send>>> {
         self.data_streams.get(&idx).map(|v| v.stream())
     }
 

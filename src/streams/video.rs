@@ -118,7 +118,7 @@ impl PacketStream for VideoStream {
         self.rx.activate_cloned()
     }
 
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>> {
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet> + Send>> {
         Box::pin(self.rx.activate_cloned())
     }
 

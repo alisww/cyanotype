@@ -41,7 +41,7 @@ pub trait PacketStream {
     /// Get a new receiver, which receives a message every time a new packet is decoded.
     fn subscribe(&self) -> BroadcastReceiver<Self::Packet>;
     /// Get a stream of decoded packets from this stream.
-    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet>>>;
+    fn stream(&self) -> Pin<Box<dyn Stream<Item = Self::Packet> + Send>>;
 
     fn close(&self);
 }
