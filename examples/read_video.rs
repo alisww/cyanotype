@@ -3,8 +3,7 @@ use futures::StreamExt;
 
 #[tokio::main]
 async fn main() {
-    let f = std::fs::File::open("out.mkv").unwrap();
-    let mut demuxer = Demuxer::from_seek(f).unwrap();
+    let mut demuxer = Demuxer::from_url("out.mkv").unwrap();
 
     let mut video_stream = demuxer.subscribe_to_video(0).unwrap();
     let mut subtitle_stream = demuxer.subscribe_to_subtitles(2).unwrap();
@@ -29,12 +28,12 @@ async fn main() {
                 // if let Ok(_p) = packet {
                 idx += 1;
                 // }
-                // println!("{:?}",packet.time);
+                println!("{:?}",packet.time);
             },
             else => break
         }
     }
 
-    let took = time.elapsed();
+    let _took = time.elapsed();
     demuxer_task.await;
 }
