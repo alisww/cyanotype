@@ -9,18 +9,20 @@ use ac_ffmpeg::codec::MediaType as FFmpegMediaType;
 use ac_ffmpeg::format::demuxer::{
     Demuxer as FFmpegDemuxer, DemuxerWithStreamInfo as FFmpegDemuxerWithStreamInfo,
 };
+use ac_ffmpeg::format::io::IO as FFmpegIO;
 
 use futures::stream::Stream;
 use image::RgbaImage;
 use std::collections::HashMap;
+use std::io::{Read, Seek};
 use std::pin::Pin;
 
 type BoxedSubtitleStream = Box<dyn PacketStream<Packet = SubtitlePacket> + Send>;
 type BoxedDataStream = Box<dyn PacketStream<Packet = DataPacket> + Send>;
 
 /// An interface over an ffmpeg demuxer.
-pub struct Demuxer {
-    inner: FFmpegDemuxer,
+pub struct Demuxer<T> {
+    inner: FFmpegDemuxer<T>,
     /// A map of video streams, where the key is the stream index.
     pub video_streams: HashMap<usize, VideoStream>,
     /// A map of subtitle streams, where the key is the stream index.
@@ -29,39 +31,45 @@ pub struct Demuxer {
     pub data_streams: HashMap<usize, BoxedDataStream>,
 }
 
-impl Demuxer {
-    /// Create a Demuxer from a seekable read stream, which may allow more metadata to be read.
-    // pub fn from_seek(io: impl Read + Seek) -> Result<Demuxer> {
-    //     Demuxer::from_ffmpeg(
-    //         FFmpegDemuxer::builder()
-    //             .build(FFmpegIO::from_seekable_read_stream(io))?
-    //             .find_stream_info(None)
-    //             .map_err(|v| v.1)?,
-    //     )
-    // }
-
-    // /// Create a Demuxer from a read stream. Streams may contain less metadata.
-    // pub fn from_read(io: impl Read) -> Result<Demuxer> {
-    //     Demuxer::from_ffmpeg(
-        //     FFmpegDemuxer::builder()
-        //         .build(FFmpegIO::from_read_stream(io))?
-        //         .find_stream_info(None)
-        //         .map_err(|v| v.1)?,
-        // )
-    // }
-
-    // Create a demuxer from a url.
-    pub fn from_url(url: &str) -> Result<Demuxer> {
+impl Demuxer<()> {
+    /// Create a demuxer from a url.
+    pub fn from_url(url: &str) -> Result<Demuxer<()>> {
         Demuxer::from_ffmpeg(
             FFmpegDemuxer::builder()
-                    .build_from_url(url)?
-                    .find_stream_info(None)
-                    .map_err(|v| v.1)?,
-            )
+                .build_from_url(url)?
+                .find_stream_info(None)
+                .map_err(|v| v.1)?,
+        )
     }
+}
 
+impl<T: Read + Seek + Send> Demuxer<T> {
+    /// Create a Demuxer from a seekable read stream, which may allow more metadata to be read.
+    pub fn from_seek(io: T) -> Result<Demuxer<T>> {
+        Demuxer::from_ffmpeg(
+            FFmpegDemuxer::builder()
+                .build(FFmpegIO::from_seekable_read_stream(io))?
+                .find_stream_info(None)
+                .map_err(|v| v.1)?,
+        )
+    }
+}
+
+impl<T: Read + Send> Demuxer<T> {
+    /// Create a Demuxer from a read stream. Streams may contain less metadata.
+    pub fn from_read(io: T) -> Result<Demuxer<T>> {
+        Demuxer::from_ffmpeg(
+            FFmpegDemuxer::builder()
+                .build(FFmpegIO::from_read_stream(io))?
+                .find_stream_info(None)
+                .map_err(|v| v.1)?,
+        )
+    }
+}
+
+impl<T> Demuxer<T> {
     /// Create a Demuxer from a pre-built underlying FFmpegDemuxer
-    pub fn from_ffmpeg(demuxer: FFmpegDemuxerWithStreamInfo) -> Result<Demuxer> {
+    pub fn from_ffmpeg(demuxer: FFmpegDemuxerWithStreamInfo<T>) -> Result<Demuxer<T>> {
         let mut video_streams: HashMap<usize, VideoStream> = HashMap::new();
         let mut subtitle_streams: HashMap<usize, BoxedSubtitleStream> = HashMap::new();
         let mut data_streams: HashMap<usize, BoxedDataStream> = HashMap::new();
