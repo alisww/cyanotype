@@ -17,8 +17,6 @@ use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::pin::Pin;
 
-pub use ac_ffmpeg;
-
 type BoxedSubtitleStream = Box<dyn PacketStream<Packet = SubtitlePacket> + Send>;
 type BoxedDataStream = Box<dyn PacketStream<Packet = DataPacket> + Send>;
 
