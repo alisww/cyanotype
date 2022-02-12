@@ -28,7 +28,7 @@ async fn main() {
                 // if let Ok(_p) = packet {
                 idx += 1;
                 // }
-                println!("{:?}",packet.time);
+                println!("{:?}",packet.pts());
             },
             else => break
         }
