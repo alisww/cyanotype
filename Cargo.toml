@@ -21,3 +21,7 @@ git = "https://github.com/alisww/substation.git"
 
 [dependencies.subrip]
 git = "https://github.com/alisww/substation.git"
+
+[dependencies.image]
+version = "0.23"
+default-features = false
